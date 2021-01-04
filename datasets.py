@@ -10,7 +10,7 @@ class custom_dataset(Dataset):
         self.file_path = file_path
         self.mask_dir = mask_dir
         self.count = 0
-        # alll pic show be this size
+        # all pic show be this size
         self.x_in_size = 256
         self.y_in_size = 256
 

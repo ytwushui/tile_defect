@@ -5,14 +5,10 @@ import numpy as np
 from datasets import custom_dataset
 from copy import copy
 from tqdm import tqdm
-from torchvision import datasets, models, transforms
 import torch
-from torch.utils.data import Dataset, DataLoader
-from torch import autograd, optim
-import torch.backends.cudnn as cudnn
+from torch.utils.data import DataLoader
+from torch import optim
 import torch.nn as nn
-from torch.utils import data
-import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from unet import UNet
 import random
@@ -23,12 +19,9 @@ import cv2
 img_path_raw = []
 data_path = './datasets'
 
-# path for image and mask
-data_defect_blow_hole = os.path.join(data_path,'blow_hole/img_raw/')
-data_defect_blow_hole_label = os.path.join(data_path,'blow_hole/img_mask/')
-
-dir_img_raw = data_defect_blow_hole
-dir_img_mask = data_defect_blow_hole_label
+# path for image and mask(label)
+dir_img_raw = os.path.join(data_path,'blow_hole/img_raw/')
+dir_img_mask = os.path.join(data_path,'blow_hole/img_mask/')
 
 # get path of image
 for img_path_tem in glob.glob(dir_img_raw+"*.jpg"):
@@ -51,7 +44,7 @@ img_path_test = [img_path_raw[i] for i in rand_ind[length_train+length_validate:
 
 ## initialize dataset and dataloader #
 
-# train
+# train datasets provide both original data and mask
 defects_dataset_train = custom_dataset(img_path_train,dir_img_mask)
 
 defects_dataloader_train = DataLoader(defects_dataset_train, batch_size=4, shuffle=False)
@@ -68,27 +61,11 @@ defects_dataloader_test = DataLoader(defects_dataset_test,batch_size=4, shuffle=
 
 ## visualize some sample images #
 
-for i, img in enumerate(defects_dataloader_train):
-    img_batch = img
-    #break
-
-n = 0
-for i in range(n):
-    # raw image is  img_batch[0][i].permute(1, 2, 0) and mask is img_batch[1][i][0]
-    #im1 = cv2.cvtColor(np.array(img_batch[1][i][0]), cv2.COLOR_RGB2BGR)
-    im1 = img_batch[0][i][0]
-    im2 = img_batch[1][i][0]
-    hmerge = np.hstack((im1, im2))  # 水平拼接
-    cv2.imshow('name',hmerge)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
 ## get device #
 
 device = torch.device("cuda" if torch.cuda.is_available()
                                   else "cpu")
 
-print(device)
 
 ## training parameters initialization #
 
@@ -114,8 +91,8 @@ scheduler = optim.lr_scheduler.ExponentialLR(optimizer, 1-(1/num_epochs))
 
 ## evaluation metric #
 def numeric_score(prediction, groundtruth):
-    prediction[prediction > 0.9] = 1;
-    prediction[prediction <= 0.9] = 0;
+    prediction[prediction > 0.9] = 1
+    prediction[prediction <= 0.9] = 0
 
     FP = np.float(np.sum((prediction == 1) & (groundtruth == 0)))
     FN = np.float(np.sum((prediction == 0) & (groundtruth == 1)))
@@ -166,7 +143,7 @@ for epoch in barcode:
     train_accuracy_total = 0.0
     num_steps = 0
 
-    # training loops
+    # training loops, train by batch
     #tbar = tqdm(defects_dataloader_train)
     for i, batch in enumerate(defects_dataloader_train):
         # set model to train mode
@@ -175,6 +152,8 @@ for epoch in barcode:
         batch_train = batch[0]
 
         batch_label = batch[1]
+        # original label is 0 for blackground, 255 for label, now 1 for label
+        # if have more than one label, change it here  !!!
         batch_label[batch_label > 0] = 1
 
         # convert to cuda
@@ -187,13 +166,13 @@ for epoch in barcode:
         # forward pass of model
         predict_out = model(batch_train_in)
 
-        # compute loss
+        # compute loss, compare predict and label
         loss = loss_criterion(predict_out, batch_label_in)
 
         # add to total loss
         train_loss_total += loss.item()
 
-        # backpropagation of gradients
+        # backpropagation of gradients   !!!
         loss.backward()
 
         # update the parameters in optimizer
@@ -300,6 +279,17 @@ for epoch in barcode:
     print('\nTrain loss: {:.4f}, Training Accuracy: {:.4f} '.format(train_loss, train_accuracy))
     print('Val Loss: {:.4f}, Validation Accuracy: {:.4f} '.format(validate_loss, validate_accuracy))
 
+
+## save the model #
+
+torch.save(model, data_path+'model_trained_blow_hole.pt')
+
+
+
+np.save(plot_train_loss, 'plot_train_loss.txt')
+np.save(plot_validate_loss, 'plot_validate_loss.txt')
+np.save(plot_epoch, 'plot_epoch.txt')
+np.save(plot_validate_accuracy, 'plot_validate_accuracy.txt')
 ## plot the train and validation loss + accuracy #
 
 palette = plt.get_cmap('Set3')
@@ -321,9 +311,7 @@ ax2 = plt.ylabel('accuracy')
 ax2 = plt.gca().legend(('accuracy'),loc='lower right')
 ax2 = plt.title('validation accuracy against epoch number')
 
-## save the model #
 
-torch.save(model, data_path+'model_trained_blow_hole.pt')
 
 ## testing set iterations #
 
